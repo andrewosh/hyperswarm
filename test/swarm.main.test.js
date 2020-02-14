@@ -2,7 +2,7 @@
 const { EventEmitter } = require('events')
 const { randomBytes } = require('crypto')
 const { NetworkResource } = require('@hyperswarm/network')
-const { test } = require('tap')
+const { test, only } = require('tap')
 const { once, done, promisifyMethod, whenifyMethod } = require('nonsynchronous')
 const { dhtBootstrap, validSocket } = require('./util')
 const hyperswarm = require('../swarm')
@@ -648,6 +648,32 @@ test('can dedup connections', async ({ same, end }) => {
 
   same(swarm1.connections.size, 1)
   same(swarm1.connections.size, 1)
+
+  closeDht(swarm1, swarm2)
+})
+
+only('peer connection opened before flush callback is called', async ({ same, end }) => {
+  const { bootstrap, closeDht } = await dhtBootstrap()
+  const swarm1 = hyperswarm({ bootstrap, maxPeers: 20, queue: { multiplex: true } })
+  const swarm2 = hyperswarm({ bootstrap, maxPeers: 20, queue: { multiplex: true } })
+
+  const topic = randomBytes(32)
+
+  await new Promise(resolve => {
+    swarm1.join(topic, { announce: true, lookup: true }, resolve)
+  })
+
+  console.log('swarm 1 joined')
+  await new Promise(resolve => {
+    swarm2.join(topic, { announce: false, lookup: true }, () => {
+      console.log('swarm 2 joined')
+      swarm2.flush(() => {
+        console.log('swarm 2 flushed')
+        same(swarm2.connections.size, 1)
+        return resolve()
+      })
+    })
+  })
 
   closeDht(swarm1, swarm2)
 })

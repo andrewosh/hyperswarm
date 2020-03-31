@@ -2,7 +2,7 @@
 const { EventEmitter } = require('events')
 const { randomBytes } = require('crypto')
 const { NetworkResource } = require('@hyperswarm/network')
-const { test } = require('tap')
+const { test, only } = require('tap')
 const { once, done, promisifyMethod, whenifyMethod } = require('nonsynchronous')
 const { dhtBootstrap, validSocket } = require('./util')
 const hyperswarm = require('../swarm')
@@ -647,4 +647,45 @@ test('can dedup connections', async ({ same, end }) => {
   same(swarm1.connections.size, 1)
 
   closeDht(swarm1, swarm2)
+})
+
+only('(bad test) flush time should not increase monotonically', async () => {
+  const NUM_TOPICS = 100
+  const NUM_SWARMS = 50
+
+  const { bootstrap, closeDht } = await dhtBootstrap()
+  const swarm1 = hyperswarm({ bootstrap, maxPeers: 20, queue: { multiplex: true } })
+  const otherSwarms = []
+  for (let i = 0; i < NUM_SWARMS; i++) {
+    otherSwarms.push(hyperswarm({ bootstrap, maxPeers: 20, queue: { multiplex: true } }))
+  }
+
+  const topics = []
+  for (let i = 0; i < NUM_TOPICS; i++) {
+    const topic = randomBytes(32)
+    topics.push(topic)
+    for (const swarm of otherSwarms) {
+      // swarm.join(topic, { announce: true, lookup: true })
+    }
+  }
+
+  await new Promise(resolve => setTimeout(resolve, 1000))
+
+  const proms = []
+  for (let topic of topics) {
+    const tag = 'flush-' + Math.random()
+    await new Promise(resolve => setTimeout(resolve, 2000))
+    console.time(tag)
+    swarm1.join(topic, { announce: true, lookup: true })
+    proms.push(new Promise(resolve => {
+      swarm1.flush(() => {
+        console.timeEnd(tag)
+        return resolve()
+      })
+    }))
+  }
+
+  await Promise.all(proms)
+
+  closeDht(...[swarm1, ...otherSwarms])
 })
